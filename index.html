@@ -394,16 +394,28 @@ function searchDrive(query) {
   document.getElementById('driveSearchStatus').textContent = 'Searching…';
   driveSearchTimer = setTimeout(async () => {
     try {
-      const q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${query.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' and trashed = false`;
+      // Normalize name: strip accents so "Vásconez" matches "Vasconez" in Drive
+      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/'/g, "\\'");
+      const parts = query.trim().split(/\s+/);
+      const firstName = normalize(parts[0]);
+      const lastName = parts.length > 1 ? normalize(parts[parts.length - 1]) : '';
+      // Search Drive by first name, then filter results client-side by last name for precision
+      const searchTerm = firstName;
+      const q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${searchTerm}' and mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' and trashed = false`;
       const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc`, {
         headers: { Authorization: 'Bearer ' + driveToken }
       });
       const data = await res.json();
       document.getElementById('driveSearchStatus').textContent = '';
-      if (!data.files || data.files.length === 0) {
+      // Filter results client-side by last name (normalized) for first+last match
+      let files = data.files || [];
+      if (lastName) {
+        files = files.filter(f => normalize(f.name.toLowerCase()).includes(lastName.toLowerCase()));
+      }
+      if (files.length === 0) {
         results.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-3);">No matching files found</div>';
       } else {
-        results.innerHTML = data.files.map(f =>
+        results.innerHTML = files.map(f =>
           `<div class="drive-result-item" onclick="selectResume('${f.id}','${f.name.replace(/'/g,"\\'")}')">
             <span>${f.name}</span>
             <span class="drive-result-date">${new Date(f.modifiedTime).toLocaleDateString()}</span>
