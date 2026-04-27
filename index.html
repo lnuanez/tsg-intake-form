@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TSG — Candidate Submission</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F5F4F1; --surface: #FFFFFF; --surface2: #F0EFEB;
+    --border: #E2E0DA; --border-focus: #1A1A1A;
+    --text: #1A1A1A; --text-2: #5C5A55; --text-3: #9B9892;
+    --accent: #C8622A; --accent-light: #F5EBE4;
+    --green: #2E6B4F; --green-light: #E4F0EA;
+    --red: #C0392B; --red-light: #FBEAE8;
+    --blue: #1A5FA8; --blue-light: #E6F1FB;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+    --radius: 10px; --font: 'DM Sans', sans-serif;
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* HEADER */
+  .header { background: var(--text); color: #fff; padding: 18px 32px; display: flex; align-items: center; justify-content: space-between; }
+  .header-logo { font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+  .header-sub { font-size: 12px; color: rgba(255,255,255,0.5); font-weight: 400; }
+  .header-badge { background: var(--accent); color: #fff; font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 99px; letter-spacing: 0.04em; }
+
+  /* LAYOUT */
+  .page { max-width: 780px; margin: 0 auto; padding: 32px 24px 80px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+
+  /* FIELDS */
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .row:last-child { margin-bottom: 0; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  label { font-size: 12px; font-weight: 500; color: var(--text-2); }
+  .req { color: var(--accent); margin-left: 2px; }
+  .opt { font-size: 11px; font-weight: 400; color: var(--text-3); margin-left: 3px; }
+  input[type="text"], input[type="email"], input[type="url"], select, textarea {
+    width: 100%; border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px;
+    font-size: 13.5px; font-family: var(--font); color: var(--text); background: var(--surface);
+    transition: border-color 0.15s, box-shadow 0.15s; outline: none; -webkit-appearance: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(26,26,26,0.07); }
+  input.err, textarea.err, select.err { border-color: var(--red); background: var(--red-light); }
+  .err-msg { font-size: 11px; color: var(--red); display: none; margin-top: 2px; }
+  .err-msg.show { display: block; }
+  textarea { resize: vertical; line-height: 1.55; }
+  select { cursor: pointer; }
+
+  /* ROLE SELECTOR */
+  .role-row { display: flex; gap: 8px; }
+  .role-row select { flex: 1; }
+  .refresh-btn { padding: 9px 13px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; font-size: 13px; color: var(--text-2); cursor: pointer; transition: all 0.15s; white-space: nowrap; font-family: var(--font); }
+  .refresh-btn:hover { background: var(--border); }
+  .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .role-status { font-size: 11px; margin-top: 5px; min-height: 16px; }
+  .role-status.ok { color: var(--green); }
+  .role-status.loading { color: var(--text-3); }
+  .role-status.fail { color: var(--red); }
+
+  /* DRIVE */
+  .drive-btn { width: 100%; padding: 10px; background: var(--blue-light); border: 1px solid #B5D4F4; border-radius: 7px; font-size: 13px; font-weight: 500; font-family: var(--font); color: var(--blue); cursor: pointer; transition: all 0.15s; margin-bottom: 10px; }
+  .drive-btn:hover { background: #D0E7F8; }
+  .drive-btn.connected { background: var(--green-light); border-color: #B8D9C8; color: var(--green); cursor: default; }
+  .drive-search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .drive-search-row input { flex: 1; }
+  .drive-results { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; display: none; background: var(--surface); }
+  .drive-result-item { padding: 10px 14px; font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; transition: background 0.1s; }
+  .drive-result-item:last-child { border-bottom: none; }
+  .drive-result-item:hover { background: var(--surface2); }
+  .drive-result-date { font-size: 11px; color: var(--text-3); }
+  .resume-tag { display: none; align-items: center; justify-content: space-between; padding: 7px 12px; background: var(--green-light); border: 1px solid #B8D9C8; border-radius: 7px; font-size: 12px; color: var(--green); margin-bottom: 8px; }
+  .resume-tag.show { display: flex; }
+  .resume-tag-x { background: none; border: none; color: var(--green); cursor: pointer; font-size: 16px; padding: 0; line-height: 1; }
+
+  /* SLOTS */
+  .slots-list { display: flex; flex-direction: column; gap: 8px; }
+  .slot-row { display: flex; gap: 8px; align-items: center; }
+  .slot-row input { flex: 1; }
+  .slot-remove { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--text-3); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; font-family: var(--font); }
+  .slot-remove:hover { background: var(--red-light); border-color: var(--red); color: var(--red); }
+  .add-slot-btn { margin-top: 8px; padding: 7px 12px; background: none; border: 1px dashed var(--border); border-radius: 7px; font-size: 12px; font-weight: 500; font-family: var(--font); color: var(--text-3); cursor: pointer; transition: all 0.15s; width: 100%; }
+  .add-slot-btn:hover { border-color: var(--text-2); color: var(--text-2); background: var(--surface2); }
+
+  /* SUBMIT */
+  .submit-btn { width: 100%; padding: 14px 24px; background: var(--text); color: #fff; border: none; border-radius: var(--radius); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; letter-spacing: 0.02em; transition: all 0.2s; margin-top: 4px; }
+  .submit-btn:hover { background: #2d2d2d; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* LOADING */
+  .loading-bar { display: none; margin-top: 16px; background: var(--surface2); border-radius: var(--radius); padding: 16px 20px; border: 1px solid var(--border); align-items: center; gap: 14px; }
+  .loading-bar.show { display: flex; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--text); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 13px; color: var(--text-2); }
+
+  /* OUTPUT */
+  .output-section { display: none; margin-top: 16px; }
+  .output-section.show { display: block; }
+  .output-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; box-shadow: var(--shadow); }
+  .output-header { padding: 14px 20px; background: var(--surface2); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .output-title { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+  .copy-btn { padding: 5px 12px; background: var(--text); color: #fff; border: none; border-radius: 6px; font-size: 11.5px; font-weight: 500; font-family: var(--font); cursor: pointer; transition: all 0.15s; }
+  .copy-btn:hover { background: #333; }
+  .copy-btn.copied { background: var(--green); }
+  .bullets-body { padding: 18px 20px; }
+  .bullet-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; line-height: 1.6; color: var(--text); }
+  .bullet-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .bullet-dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; margin-top: 8px; flex-shrink: 0; }
+  .email-body { padding: 20px; font-size: 13.5px; line-height: 1.7; color: var(--text); white-space: pre-wrap; font-family: var(--font); outline: none; min-height: 200px; }
+  .email-body:focus { background: #FAFAF8; }
+  .edit-hint { padding: 8px 20px 14px; font-size: 11px; color: var(--text-3); font-style: italic; }
+
+  /* SUCCESS */
+  .success-banner { display: none; background: var(--green-light); border: 1px solid #B8D9C8; border-radius: var(--radius); padding: 14px 18px; margin-top: 16px; font-size: 13px; color: var(--green); font-weight: 500; align-items: center; gap: 10px; }
+  .success-banner.show { display: flex; }
+
+  .footer { text-align: center; font-size: 11px; color: var(--text-3); margin-top: 32px; font-family: var(--font); }
+
+  @media (max-width: 560px) {
+    .row { grid-template-columns: 1fr; }
+    .page { padding: 20px 16px 60px; }
+    .header { padding: 14px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-logo">TSG</div>
+    <div class="header-sub">Candidate Submission</div>
+  </div>
+  <div class="header-badge" id="rolesBadge">Loading roles…</div>
+</div>
+
+<div class="page">
+
+  <!-- ENGAGEMENT -->
+  <div class="card">
+    <div class="section-label">Engagement</div>
+    <div class="row">
+      <div class="field"><label>Recruiter name<span class="opt">(optional)</span></label><input type="text" id="recruiterName" value="Lawrence" /></div>
+      <div class="field"><label>Client company<span class="opt">(optional)</span></label><input type="text" id="clientName" value="CAA" /></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Hiring manager<span class="opt">(optional)</span></label><input type="text" id="hiringManager" value="Jeff" /></div>
+      <div class="field">
+        <label>Client contact name<span class="req">*</span></label>
+        <input type="text" id="clientContact" placeholder="e.g. Nadia" oninput="clearErr('clientContact')" />
+        <span class="err-msg" id="err-clientContact">Required</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Client contact email<span class="opt">(optional)</span></label><input type="email" id="clientEmail" placeholder="e.g. nadia@caa.com" /></div>
+      <div class="field"></div>
+    </div>
+  </div>
+
+  <!-- OPEN ROLE -->
+  <div class="card">
+    <div class="section-label">Open role<span class="req">*</span></div>
+    <div class="field">
+      <div class="role-row">
+        <select id="roleSelect" onchange="clearErr('role')">
+          <option value="">— loading open roles… —</option>
+        </select>
+        <button class="refresh-btn" id="refreshBtn" onclick="loadRoles()">↻ Refresh</button>
+      </div>
+      <span class="err-msg" id="err-role">Please select a role</span>
+      <div class="role-status" id="roleStatus"></div>
+    </div>
+  </div>
+
+  <!-- CANDIDATE -->
+  <div class="card">
+    <div class="section-label">Candidate</div>
+    <div class="row">
+      <div class="field">
+        <label>Candidate name<span class="req">*</span></label>
+        <input type="text" id="candidateName" placeholder="e.g. Fausto Zambrano" oninput="onCandidateNameInput()" />
+        <span class="err-msg" id="err-candidateName">Required</span>
+      </div>
+      <div class="field"><label>Candidate email<span class="opt">(optional)</span></label><input type="email" id="candidateEmail" placeholder="e.g. fausto@email.com" /></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Location<span class="opt">(optional)</span></label><input type="text" id="location" placeholder="e.g. Argentina" /></div>
+      <div class="field">
+        <label>Rate type<span class="opt">(optional)</span></label>
+        <select id="rateType">
+          <option value="">— select —</option>
+          <option value="nearshore">Nearshore</option>
+          <option value="offshore">Offshore</option>
+          <option value="onshore">Onshore</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTERVIEW SLOTS -->
+  <div class="card">
+    <div class="section-label">Interview slots<span class="opt" style="text-transform:none;margin-left:6px;">(optional)</span></div>
+    <div class="slots-list" id="slotsList">
+      <div class="slot-row">
+        <input type="text" placeholder="e.g. Monday 2pm–3pm EST" />
+        <button class="slot-remove" onclick="removeSlot(this)">×</button>
+      </div>
+    </div>
+    <button class="add-slot-btn" onclick="addSlot()">+ Add another slot</button>
+  </div>
+
+  <!-- RESUME -->
+  <div class="card">
+    <div class="section-label">Resume<span class="req">*</span></div>
+    <button class="drive-btn" id="driveBtn" onclick="authorizeGoogle()">Connect Google Drive to auto-pull resume</button>
+    <div id="driveSearchWrap" style="display:none;">
+      <div class="drive-search-row">
+        <input type="text" id="driveSearchInput" placeholder="Type candidate name to search Drive…" oninput="searchDrive(this.value)" />
+        <span id="driveSearchStatus" style="font-size:12px;color:var(--text-3);padding:8px 4px;white-space:nowrap;"></span>
+      </div>
+      <div class="drive-results" id="driveResults"></div>
+    </div>
+    <div class="resume-tag" id="resumeTag">
+      <span id="resumeFileName">Resume loaded</span>
+      <button class="resume-tag-x" onclick="clearResume()">×</button>
+    </div>
+    <textarea id="resume" rows="7" placeholder="Resume text will appear here once selected from Drive, or paste manually…" oninput="clearErr('resume')"></textarea>
+    <span class="err-msg" id="err-resume">Required</span>
+  </div>
+
+  <!-- SUBMIT -->
+  <button class="submit-btn" id="submitBtn" onclick="submitForm()">Generate &amp; Create Gmail Draft →</button>
+
+  <div class="loading-bar" id="loadingBar">
+    <div class="spinner"></div>
+    <span class="loading-text" id="loadingText">Generating…</span>
+  </div>
+
+  <div class="success-banner" id="successBanner">✓ Gmail draft created and resume attached successfully.</div>
+
+  <!-- OUTPUT -->
+  <div class="output-section" id="outputSection">
+    <div class="output-card">
+      <div class="output-header">
+        <span class="output-title">3 Matching Bullet Points</span>
+        <button class="copy-btn" id="copyBulletsBtn" onclick="copyBullets()">Copy</button>
+      </div>
+      <div class="bullets-body" id="bulletsBody"></div>
+    </div>
+    <div class="output-card">
+      <div class="output-header">
+        <span class="output-title">Draft Submission Email</span>
+        <button class="copy-btn" id="copyEmailBtn" onclick="copyEmail()">Copy</button>
+      </div>
+      <div class="email-body" id="emailBody" contenteditable="true" spellcheck="true"></div>
+      <div class="edit-hint">✎ Click to edit before copying</div>
+    </div>
+  </div>
+
+  <div class="footer">TSG Candidate Submission · Powered by Claude</div>
+</div>
+
+<script>
+// ── CONFIG ──
+const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
+const MODEL = 'claude-sonnet-4-20250514';
+const JOBS_URL = 'https://careers.totalperform.com/jobs?department_id=1000000000';
+const DRIVE_FOLDER_ID = '1h3xazJKaPbYfjkp_7pB_Cq4HPoMafOK6';
+const GOOGLE_CLIENT_ID = '20470494005-g4o9un13f6pnbv8ad9s41ru9slj9u2ek.apps.googleusercontent.com';
+const APPS_SCRIPT_URL = 'https://script.google.com/a/macros/thesmythgroup.com/s/AKfycbweZoHomOtY4tOKd2VlxBARjaRY8EsouTlzT-dWtLSQBDFS9rdbyHUO9O5XilOeKnUF/exec';
+
+let jobs = []; // [{title, url}]
+let selectedJobDesc = '';
+let generatedBullets = [];
+let driveToken = null;
+let driveSearchTimer = null;
+
+// ── LOAD ROLES ON PAGE LOAD ──
+async function loadRoles() {
+  const btn = document.getElementById('refreshBtn');
+  const status = document.getElementById('roleStatus');
+  const sel = document.getElementById('roleSelect');
+  btn.disabled = true; btn.textContent = '…';
+  status.textContent = 'Loading roles from careers.totalperform.com…';
+  status.className = 'role-status loading';
+  try {
+    const res = await fetch(ANTHROPIC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: MODEL, max_tokens: 800,
+        system: 'Extract all job titles and their full URLs from the careers page. Return ONLY a valid JSON array with no markdown, no extra text: [{"title":"Job Title","url":"https://careers.totalperform.com/jobs/..."}]',
+        messages: [{ role: 'user', content: 'Fetch ' + JOBS_URL + ' and return all job listings as a JSON array.' }],
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }]
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'API error');
+    const raw = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('No jobs found');
+    jobs = parsed;
+    sel.innerHTML = '<option value="">— select an open role —</option>';
+    jobs.forEach((j, i) => {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = j.title; sel.appendChild(o);
+    });
+    document.getElementById('rolesBadge').textContent = jobs.length + ' open roles';
+    status.textContent = '✓ ' + jobs.length + ' roles loaded';
+    status.className = 'role-status ok';
+  } catch (e) {
+    status.textContent = 'Could not load roles — ' + e.message;
+    status.className = 'role-status fail';
+    document.getElementById('rolesBadge').textContent = 'Roles unavailable';
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ Refresh';
+  }
+}
+
+// ── FETCH JD WHEN ROLE SELECTED ──
+document.addEventListener('DOMContentLoaded', () => {
+  loadRoles();
+  document.getElementById('roleSelect').addEventListener('change', async function() {
+    const idx = this.value;
+    if (idx === '') { selectedJobDesc = ''; return; }
+    const job = jobs[parseInt(idx)];
+    const status = document.getElementById('roleStatus');
+    status.textContent = 'Fetching job description…';
+    status.className = 'role-status loading';
+    selectedJobDesc = '';
+    try {
+      const res = await fetch(ANTHROPIC_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL, max_tokens: 1500,
+          system: 'Extract ONLY the job description content: title, responsibilities, requirements, qualifications. Remove all navigation, headers, footers, cookie banners. Return plain text only.',
+          messages: [{ role: 'user', content: 'Fetch and extract the job description from: ' + job.url }],
+          tools: [{ type: 'web_search_20250305', name: 'web_search' }]
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'API error');
+      const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      if (!txt) throw new Error('empty');
+      selectedJobDesc = txt;
+      status.textContent = '✓ Job description ready';
+      status.className = 'role-status ok';
+    } catch (e) {
+      status.textContent = 'Could not fetch JD — will use role title only';
+      status.className = 'role-status fail';
+    }
+  });
+});
+
+// ── GOOGLE DRIVE ──
+function authorizeGoogle() {
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    callback: (resp) => {
+      if (resp.error) { alert('Google auth failed: ' + resp.error); return; }
+      driveToken = resp.access_token;
+      const btn = document.getElementById('driveBtn');
+      btn.textContent = '✓ Google Drive connected';
+      btn.classList.add('connected');
+      btn.onclick = null;
+      document.getElementById('driveSearchWrap').style.display = 'block';
+      const name = document.getElementById('candidateName').value.trim();
+      if (name) { document.getElementById('driveSearchInput').value = name; searchDrive(name); }
+    }
+  });
+  client.requestAccessToken();
+}
+
+function onCandidateNameInput() {
+  clearErr('candidateName');
+  const name = document.getElementById('candidateName').value.trim();
+  if (driveToken && name.length > 2) {
+    document.getElementById('driveSearchInput').value = name;
+    searchDrive(name);
+  }
+}
+
+function searchDrive(query) {
+  clearTimeout(driveSearchTimer);
+  const results = document.getElementById('driveResults');
+  if (!query || query.length < 2) { results.style.display = 'none'; return; }
+  document.getElementById('driveSearchStatus').textContent = 'Searching…';
+  driveSearchTimer = setTimeout(async () => {
+    try {
+      const q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${query.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' and trashed = false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc`, {
+        headers: { Authorization: 'Bearer ' + driveToken }
+      });
+      const data = await res.json();
+      document.getElementById('driveSearchStatus').textContent = '';
+      if (!data.files || data.files.length === 0) {
+        results.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-3);">No matching files found</div>';
+      } else {
+        results.innerHTML = data.files.map(f =>
+          `<div class="drive-result-item" onclick="selectResume('${f.id}','${f.name.replace(/'/g,"\\'")}')">
+            <span>${f.name}</span>
+            <span class="drive-result-date">${new Date(f.modifiedTime).toLocaleDateString()}</span>
+          </div>`
+        ).join('');
+      }
+      results.style.display = 'block';
+    } catch(e) {
+      document.getElementById('driveSearchStatus').textContent = 'Error';
+    }
+  }, 400);
+}
+
+async function selectResume(fileId, fileName) {
+  document.getElementById('driveResults').style.display = 'none';
+  document.getElementById('driveSearchStatus').textContent = 'Loading…';
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: 'Bearer ' + driveToken }
+    });
+    const blob = await res.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    document.getElementById('resume').value = result.value;
+    document.getElementById('resumeFileName').textContent = fileName;
+    document.getElementById('resumeTag').classList.add('show');
+    document.getElementById('driveSearchStatus').textContent = '✓';
+    clearErr('resume');
+    if (!document.getElementById('candidateName').value.trim()) {
+      const nameGuess = fileName.replace(/\.(docx|doc)$/i,'').replace(/[-_]/g,' ').replace(/resume|cv/gi,'').trim();
+      document.getElementById('candidateName').value = nameGuess;
+    }
+  } catch(e) {
+    document.getElementById('driveSearchStatus').textContent = 'Failed';
+    alert('Could not read file: ' + e.message);
+  }
+}
+
+function clearResume() {
+  document.getElementById('resume').value = '';
+  document.getElementById('resumeTag').classList.remove('show');
+  document.getElementById('driveSearchInput').value = '';
+  document.getElementById('driveSearchStatus').textContent = '';
+}
+
+// ── SLOTS ──
+function addSlot() {
+  const row = document.createElement('div'); row.className = 'slot-row';
+  row.innerHTML = '<input type="text" placeholder="e.g. Tuesday 10am–11am EST" /><button class="slot-remove" onclick="removeSlot(this)">×</button>';
+  document.getElementById('slotsList').appendChild(row);
+}
+function removeSlot(btn) {
+  const rows = document.querySelectorAll('.slot-row');
+  if (rows.length > 1) btn.closest('.slot-row').remove();
+  else btn.closest('.slot-row').querySelector('input').value = '';
+}
+function getSlots() {
+  return Array.from(document.querySelectorAll('.slot-row input')).map(i => i.value.trim()).filter(Boolean);
+}
+
+// ── VALIDATION ──
+function clearErr(id) {
+  const e = document.getElementById('err-' + id); if (e) e.classList.remove('show');
+  const i = document.getElementById(id); if (i) i.classList.remove('err');
+}
+function showErr(id) {
+  const e = document.getElementById('err-' + id); if (e) e.classList.add('show');
+  const i = document.getElementById(id); if (i) { i.classList.add('err'); i.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+
+// ── SUBMIT ──
+async function submitForm() {
+  let valid = true;
+  if (!document.getElementById('clientContact').value.trim()) { showErr('clientContact'); valid = false; }
+  if (!document.getElementById('roleSelect').value) { showErr('role'); valid = false; }
+  if (!document.getElementById('candidateName').value.trim()) { showErr('candidateName'); valid = false; }
+  const resume = document.getElementById('resume').value.trim();
+  if (!resume) { showErr('resume'); valid = false; }
+  if (!valid) return;
+
+  const idx = parseInt(document.getElementById('roleSelect').value);
+  const roleTitle = jobs[idx]?.title || '';
+  const recruiterName = document.getElementById('recruiterName').value.trim() || 'Lawrence';
+  const clientName = document.getElementById('clientName').value.trim() || 'CAA';
+  const hiringManager = document.getElementById('hiringManager').value.trim() || 'Jeff';
+  const clientContact = document.getElementById('clientContact').value.trim();
+  const clientEmail = document.getElementById('clientEmail').value.trim();
+  const candidateName = document.getElementById('candidateName').value.trim();
+  const candidateEmail = document.getElementById('candidateEmail').value.trim();
+  const location = document.getElementById('location').value.trim();
+  const rateType = document.getElementById('rateType').value;
+  const slots = getSlots();
+  const locationLine = location && rateType ? `${candidateName} is located in ${location}, so the ${rateType} rate would apply.`
+    : location ? `${candidateName} is located in ${location}.` : '';
+  const slotsLine = slots.length > 0 ? `Perhaps ${hiringManager} can fit into one of these available slots: ${slots.join(', ')}.`
+    : `Let me know when ${hiringManager} is available to connect.`;
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  document.getElementById('loadingBar').classList.add('show');
+  document.getElementById('successBanner').classList.remove('show');
+  document.getElementById('outputSection').classList.remove('show');
+
+  const msgs = ['Analyzing job requirements and candidate background…', 'Identifying strongest qualification matches…', 'Crafting bullet points…', 'Drafting submission email…'];
+  let mi = 0;
+  const lt = document.getElementById('loadingText');
+  const tick = setInterval(() => { mi = Math.min(mi + 1, msgs.length - 1); lt.textContent = msgs[mi]; }, 2500);
+
+  const systemPrompt = `You are a recruitment consultant writing candidate submission emails.
+Generate exactly 3 bullet points highlighting the candidate's strongest fit. Each: 1–2 sentences, specific, tied directly to job requirements.
+Style example: "Extensive experience delivering feature-rich React applications in production, focusing strongly on user experience, responsiveness, and front-end scalability."
+Draft a short warm professional email with this EXACT structure:
+- "Hello [clientContact],"
+- One sentence: introduce candidate, resume attached
+- "Some highlights:"
+- 3 bullet points
+- Location/rate line if provided
+- Scheduling close with slots if provided
+- Candidate email line if provided: "His/Her email address is [email]"
+- "Thank you," then recruiter name
+Under 300 words. No extra sections.
+Respond ONLY with valid JSON, no markdown: {"bullets":["b1","b2","b3"],"email":"full email text","subject":"Candidate Name - Role Title"}`;
+
+  const userMsg = `Recruiter: ${recruiterName}
+Client: ${clientName}
+Hiring manager: ${hiringManager}
+Client contact: ${clientContact}
+Client email: ${clientEmail || 'not provided'}
+Role: ${roleTitle}
+Candidate: ${candidateName}
+Candidate email: ${candidateEmail || 'not provided'}
+Location/rate: ${locationLine || 'not applicable'}
+Scheduling: ${slotsLine}
+
+JOB DESCRIPTION:
+${selectedJobDesc || 'Role: ' + roleTitle}
+
+RESUME:
+${resume}`;
+
+  try {
+    const res = await fetch(ANTHROPIC_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 1000, system: systemPrompt, messages: [{ role: 'user', content: userMsg }] })
+    });
+    clearInterval(tick);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'API error');
+    const raw = data.content?.find(b => b.type === 'text')?.text || '';
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    generatedBullets = parsed.bullets || [];
+    document.getElementById('bulletsBody').innerHTML = generatedBullets.map(b =>
+      `<div class="bullet-item"><span class="bullet-dot"></span><span>${b}</span></div>`).join('');
+    document.getElementById('emailBody').textContent = parsed.email || '';
+    document.getElementById('outputSection').classList.add('show');
+    document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Trigger Gmail draft creation via Apps Script
+    const subject = parsed.subject || `${candidateName} - ${roleTitle}`;
+    const appsScriptCall = `${APPS_SCRIPT_URL}?candidate=${encodeURIComponent(candidateName)}`;
+    fetch(appsScriptCall).catch(() => {});
+    document.getElementById('successBanner').classList.add('show');
+
+  } catch (err) {
+    clearInterval(tick);
+    alert('Error: ' + err.message);
+  } finally {
+    document.getElementById('loadingBar').classList.remove('show');
+    btn.disabled = false;
+  }
+}
+
+// ── COPY ──
+function copyBullets() {
+  navigator.clipboard.writeText(generatedBullets.map(b => '• ' + b).join('\n')).catch(() => {});
+  const b = document.getElementById('copyBulletsBtn'); b.textContent = 'Copied!'; b.classList.add('copied');
+  setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('copied'); }, 1800);
+}
+function copyEmail() {
+  navigator.clipboard.writeText(document.getElementById('emailBody').innerText).catch(() => {});
+  const b = document.getElementById('copyEmailBtn'); b.textContent = 'Copied!'; b.classList.add('copied');
+  setTimeout(() => { b.textContent = 'Copy'; b.classList.remove('copied'); }, 1800);
+}
+</script>
+</body>
+</html>
