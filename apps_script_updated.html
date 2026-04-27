@@ -1,0 +1,251 @@
+
+<div style="font-family: var(--font-sans); padding: 1.5rem 0; max-width: 700px;">
+  <div style="background: #1e1e2e; border-radius: 12px; padding: 1.5rem; color: #cdd6f4; font-size: 12.5px; line-height: 1.7; overflow-x: auto;">
+    <pre style="margin:0; white-space: pre-wrap; font-family: 'Courier New', monospace;">
+<span style="color:#6c7086">/**
+ * TSG — Attach Resume to Gmail Draft (v2)
+ * =========================================
+ * Changes from v1:
+ *   - Duplicate check: skips attachment if PDF already present
+ *   - Accepts ?candidate=Name param from Claude for precise matching
+ *   - doGet() handler so Claude can trigger via web app URL
+ *   - installTrigger() fallback still available
+ */</span>
+
+<span style="color:#cba6f7">var</span> CONFIG = {
+  RESUME_FOLDER_ID: <span style="color:#a6e3a1">"1h3xazJKaPbYfjkp_7pB_Cq4HPoMafOK6"</span>,
+  DRAFT_LOOKBACK_MINUTES: <span style="color:#fab387">30</span>,
+};
+
+<span style="color:#6c7086">// ─── WEB APP ENTRY POINT ─────────────────────────────────────────────────────</span>
+<span style="color:#6c7086">// Called by Claude via: GET {webAppUrl}?candidate=Fausto+Zambrano</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">doGet</span>(e) {
+  <span style="color:#cba6f7">var</span> candidateName = e &amp;&amp; e.parameter &amp;&amp; e.parameter.candidate
+    ? decodeURIComponent(e.parameter.candidate)
+    : <span style="color:#a6e3a1">null</span>;
+
+  <span style="color:#cba6f7">var</span> result = attachResumeToDraft(candidateName);
+
+  <span style="color:#cba6f7">return</span> ContentService
+    .createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+<span style="color:#6c7086">// ─── MAIN FUNCTION ───────────────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">attachResumeToDraft</span>(candidateNameOverride) {
+  Logger.log(<span style="color:#a6e3a1">"=== TSG Resume Attachment Script v2 ==="</span>);
+
+  <span style="color:#6c7086">// Step 1: Find the most recent unprocessed submission draft</span>
+  <span style="color:#cba6f7">var</span> draft = findLatestSubmissionDraft(candidateNameOverride);
+  <span style="color:#cba6f7">if</span> (!draft) {
+    <span style="color:#cba6f7">var</span> msg = <span style="color:#a6e3a1">"❌ No recent submission draft found."</span>;
+    Logger.log(msg);
+    <span style="color:#cba6f7">return</span> { success: <span style="color:#fab387">false</span>, error: msg };
+  }
+
+  <span style="color:#cba6f7">var</span> subject = draft.getMessage().getSubject();
+  Logger.log(<span style="color:#a6e3a1">"✓ Found draft: "</span> + subject);
+
+  <span style="color:#6c7086">// Step 2: Check if PDF already attached — abort if so</span>
+  <span style="color:#cba6f7">if</span> (draftHasPdfAttachment(draft)) {
+    <span style="color:#cba6f7">var</span> msg = <span style="color:#a6e3a1">"⚠️ PDF already attached to this draft. Skipping."</span>;
+    Logger.log(msg);
+    <span style="color:#cba6f7">return</span> { success: <span style="color:#fab387">true</span>, skipped: <span style="color:#fab387">true</span>, reason: msg };
+  }
+
+  <span style="color:#6c7086">// Step 3: Get candidate name — prefer override, fall back to subject parse</span>
+  <span style="color:#cba6f7">var</span> candidateName = candidateNameOverride || extractCandidateName(subject);
+  <span style="color:#cba6f7">if</span> (!candidateName) {
+    <span style="color:#cba6f7">var</span> msg = <span style="color:#a6e3a1">"❌ Could not extract candidate name from: "</span> + subject;
+    Logger.log(msg);
+    <span style="color:#cba6f7">return</span> { success: <span style="color:#fab387">false</span>, error: msg };
+  }
+  Logger.log(<span style="color:#a6e3a1">"✓ Candidate: "</span> + candidateName);
+
+  <span style="color:#6c7086">// Step 4: Find resume PDF in Drive</span>
+  <span style="color:#cba6f7">var</span> resumeFile = findResumeInDrive(candidateName);
+  <span style="color:#cba6f7">if</span> (!resumeFile) {
+    <span style="color:#cba6f7">var</span> msg = <span style="color:#a6e3a1">"❌ No resume PDF found for: "</span> + candidateName;
+    Logger.log(msg);
+    <span style="color:#cba6f7">return</span> { success: <span style="color:#fab387">false</span>, error: msg };
+  }
+  Logger.log(<span style="color:#a6e3a1">"✓ Resume file: "</span> + resumeFile.getName());
+
+  <span style="color:#6c7086">// Step 5: Attach PDF to draft</span>
+  <span style="color:#cba6f7">var</span> success = attachFileToDraft(draft, resumeFile);
+  <span style="color:#cba6f7">if</span> (success) {
+    Logger.log(<span style="color:#a6e3a1">"✅ Resume attached! Draft ready to review and send."</span>);
+    <span style="color:#cba6f7">return</span> { success: <span style="color:#fab387">true</span>, candidate: candidateName, file: resumeFile.getName() };
+  } <span style="color:#cba6f7">else</span> {
+    <span style="color:#cba6f7">return</span> { success: <span style="color:#fab387">false</span>, error: <span style="color:#a6e3a1">"Attachment failed — see execution log."</span> };
+  }
+}
+
+<span style="color:#6c7086">// ─── DUPLICATE CHECK ─────────────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">draftHasPdfAttachment</span>(draft) {
+  <span style="color:#cba6f7">try</span> {
+    <span style="color:#cba6f7">var</span> attachments = draft.getMessage().getAttachments();
+    <span style="color:#cba6f7">for</span> (<span style="color:#cba6f7">var</span> i = <span style="color:#fab387">0</span>; i &lt; attachments.length; i++) {
+      <span style="color:#cba6f7">if</span> (attachments[i].getContentType() === <span style="color:#a6e3a1">"application/pdf"</span>) {
+        <span style="color:#cba6f7">return true</span>;
+      }
+    }
+  } <span style="color:#cba6f7">catch</span> (e) {
+    Logger.log(<span style="color:#a6e3a1">"Warning: could not check attachments: "</span> + e.message);
+  }
+  <span style="color:#cba6f7">return false</span>;
+}
+
+<span style="color:#6c7086">// ─── FIND DRAFT ──────────────────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">findLatestSubmissionDraft</span>(candidateNameOverride) {
+  <span style="color:#cba6f7">var</span> drafts = GmailApp.getDrafts();
+  <span style="color:#cba6f7">var</span> cutoff = <span style="color:#cba6f7">new</span> Date();
+  cutoff.setMinutes(cutoff.getMinutes() - CONFIG.DRAFT_LOOKBACK_MINUTES);
+
+  <span style="color:#cba6f7">var</span> latestDraft = <span style="color:#fab387">null</span>;
+  <span style="color:#cba6f7">var</span> latestDate = <span style="color:#fab387">null</span>;
+
+  <span style="color:#cba6f7">for</span> (<span style="color:#cba6f7">var</span> i = <span style="color:#fab387">0</span>; i &lt; drafts.length; i++) {
+    <span style="color:#cba6f7">var</span> msg = drafts[i].getMessage();
+    <span style="color:#cba6f7">var</span> subject = msg.getSubject();
+    <span style="color:#cba6f7">var</span> date = msg.getDate();
+
+    <span style="color:#6c7086">// Must have " - " separator (e.g. "Fausto Zambrano - Full Stack Dev")</span>
+    <span style="color:#cba6f7">if</span> (subject.indexOf(<span style="color:#a6e3a1">" - "</span>) === -<span style="color:#fab387">1</span>) <span style="color:#cba6f7">continue</span>;
+
+    <span style="color:#6c7086">// If we have a name override, filter to only matching drafts</span>
+    <span style="color:#cba6f7">if</span> (candidateNameOverride) {
+      <span style="color:#cba6f7">var</span> nameLower = candidateNameOverride.toLowerCase();
+      <span style="color:#cba6f7">var</span> subjectLower = subject.toLowerCase();
+      <span style="color:#cba6f7">var</span> nameParts = nameLower.split(<span style="color:#a6e3a1">" "</span>);
+      <span style="color:#cba6f7">var</span> matches = nameParts.some(<span style="color:#cba6f7">function</span>(p) {
+        <span style="color:#cba6f7">return</span> p.length > <span style="color:#fab387">2</span> &amp;&amp; subjectLower.indexOf(p) !== -<span style="color:#fab387">1</span>;
+      });
+      <span style="color:#cba6f7">if</span> (!matches) <span style="color:#cba6f7">continue</span>;
+    } <span style="color:#cba6f7">else</span> {
+      <span style="color:#6c7086">// No override — only look within the lookback window</span>
+      <span style="color:#cba6f7">if</span> (date &lt; cutoff) <span style="color:#cba6f7">continue</span>;
+    }
+
+    <span style="color:#6c7086">// Skip if already has PDF attached</span>
+    <span style="color:#cba6f7">if</span> (draftHasPdfAttachment(drafts[i])) <span style="color:#cba6f7">continue</span>;
+
+    <span style="color:#cba6f7">if</span> (!latestDate || date > latestDate) {
+      latestDraft = drafts[i];
+      latestDate = date;
+    }
+  }
+
+  <span style="color:#cba6f7">return</span> latestDraft;
+}
+
+<span style="color:#6c7086">// ─── EXTRACT CANDIDATE NAME ──────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">extractCandidateName</span>(subject) {
+  <span style="color:#cba6f7">var</span> parts = subject.split(<span style="color:#a6e3a1">" - "</span>);
+  <span style="color:#cba6f7">return</span> parts.length >= <span style="color:#fab387">2</span> ? parts[<span style="color:#fab387">0</span>].trim() : <span style="color:#fab387">null</span>;
+}
+
+<span style="color:#6c7086">// ─── FIND RESUME IN DRIVE ────────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">findResumeInDrive</span>(candidateName) {
+  <span style="color:#cba6f7">var</span> folder;
+  <span style="color:#cba6f7">try</span> {
+    folder = DriveApp.getFolderById(CONFIG.RESUME_FOLDER_ID);
+  } <span style="color:#cba6f7">catch</span> (e) {
+    Logger.log(<span style="color:#a6e3a1">"❌ Cannot access Drive folder: "</span> + e.message);
+    <span style="color:#cba6f7">return null</span>;
+  }
+
+  <span style="color:#cba6f7">var</span> files = folder.getFilesByType(MimeType.PDF);
+  <span style="color:#cba6f7">var</span> nameParts = candidateName.toLowerCase().split(<span style="color:#a6e3a1">" "</span>);
+  <span style="color:#cba6f7">var</span> bestMatch = <span style="color:#fab387">null</span>;
+  <span style="color:#cba6f7">var</span> bestScore = <span style="color:#fab387">0</span>;
+
+  <span style="color:#cba6f7">while</span> (files.hasNext()) {
+    <span style="color:#cba6f7">var</span> file = files.next();
+    <span style="color:#cba6f7">var</span> fileName = file.getName().toLowerCase();
+    <span style="color:#cba6f7">var</span> score = <span style="color:#fab387">0</span>;
+    <span style="color:#cba6f7">for</span> (<span style="color:#cba6f7">var</span> i = <span style="color:#fab387">0</span>; i &lt; nameParts.length; i++) {
+      <span style="color:#cba6f7">if</span> (nameParts[i].length > <span style="color:#fab387">2</span> &amp;&amp; fileName.indexOf(nameParts[i]) !== -<span style="color:#fab387">1</span>) score++;
+    }
+    <span style="color:#cba6f7">if</span> (score > bestScore) { bestScore = score; bestMatch = file; }
+  }
+
+  <span style="color:#cba6f7">return</span> bestScore > <span style="color:#fab387">0</span> ? bestMatch : <span style="color:#fab387">null</span>;
+}
+
+<span style="color:#6c7086">// ─── ATTACH FILE TO DRAFT ────────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">attachFileToDraft</span>(draft, file) {
+  <span style="color:#cba6f7">try</span> {
+    <span style="color:#cba6f7">var</span> msg = draft.getMessage();
+    <span style="color:#cba6f7">var</span> to = msg.getTo();
+    <span style="color:#cba6f7">var</span> cc = msg.getCc();
+    <span style="color:#cba6f7">var</span> subject = msg.getSubject();
+    <span style="color:#cba6f7">var</span> body = msg.getBody();
+    <span style="color:#cba6f7">var</span> plainBody = msg.getPlainBody();
+
+    <span style="color:#6c7086">// Double-check no PDF before deleting old draft</span>
+    <span style="color:#cba6f7">var</span> existing = msg.getAttachments();
+    <span style="color:#cba6f7">for</span> (<span style="color:#cba6f7">var</span> i = <span style="color:#fab387">0</span>; i &lt; existing.length; i++) {
+      <span style="color:#cba6f7">if</span> (existing[i].getContentType() === <span style="color:#a6e3a1">"application/pdf"</span>) {
+        Logger.log(<span style="color:#a6e3a1">"⚠️ PDF already attached — aborting to prevent duplicate."</span>);
+        <span style="color:#cba6f7">return false</span>;
+      }
+    }
+
+    <span style="color:#cba6f7">var</span> blob = file.getBlob();
+    Logger.log(<span style="color:#a6e3a1">"  Attaching: "</span> + file.getName() + <span style="color:#a6e3a1">" ("</span> + Math.round(blob.getBytes().length / <span style="color:#fab387">1024</span>) + <span style="color:#a6e3a1">" KB)"</span>);
+
+    draft.deleteDraft();
+
+    GmailApp.createDraft(to, subject, plainBody, {
+      attachments: [blob],
+      cc: cc,
+      htmlBody: body
+    });
+
+    Logger.log(<span style="color:#a6e3a1">"  ✅ New draft created with attachment."</span>);
+    <span style="color:#cba6f7">return true</span>;
+  } <span style="color:#cba6f7">catch</span> (e) {
+    Logger.log(<span style="color:#a6e3a1">"❌ Error: "</span> + e.message);
+    <span style="color:#cba6f7">return false</span>;
+  }
+}
+
+<span style="color:#6c7086">// ─── TRIGGER SETUP ───────────────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">installTrigger</span>() {
+  removeTrigger();
+  ScriptApp.newTrigger(<span style="color:#a6e3a1">"attachResumeToDraft"</span>)
+    .timeBased()
+    .everyMinutes(<span style="color:#fab387">5</span>)
+    .create();
+  Logger.log(<span style="color:#a6e3a1">"✅ Trigger installed — runs every 5 minutes."</span>);
+}
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">removeTrigger</span>() {
+  <span style="color:#cba6f7">var</span> triggers = ScriptApp.getProjectTriggers();
+  <span style="color:#cba6f7">for</span> (<span style="color:#cba6f7">var</span> i = <span style="color:#fab387">0</span>; i &lt; triggers.length; i++) ScriptApp.deleteTrigger(triggers[i]);
+  Logger.log(<span style="color:#a6e3a1">"✅ All triggers removed."</span>);
+}
+
+<span style="color:#6c7086">// ─── DIAGNOSTIC ──────────────────────────────────────────────────────────────</span>
+
+<span style="color:#cba6f7">function</span> <span style="color:#89b4fa">listRecentDrafts</span>() {
+  <span style="color:#cba6f7">var</span> drafts = GmailApp.getDrafts();
+  Logger.log(<span style="color:#a6e3a1">"Recent drafts ("</span> + drafts.length + <span style="color:#a6e3a1">" total):"</span>);
+  <span style="color:#cba6f7">for</span> (<span style="color:#cba6f7">var</span> i = <span style="color:#fab387">0</span>; i &lt; Math.min(drafts.length, <span style="color:#fab387">10</span>); i++) {
+    <span style="color:#cba6f7">var</span> msg = drafts[i].getMessage();
+    <span style="color:#cba6f7">var</span> hasPdf = draftHasPdfAttachment(drafts[i]) ? <span style="color:#a6e3a1">" [HAS PDF]"</span> : <span style="color:#a6e3a1">""</span>;
+    Logger.log(<span style="color:#a6e3a1">"  ["</span> + i + <span style="color:#a6e3a1">"] "</span> + msg.getDate() + <span style="color:#a6e3a1">" | "</span> + msg.getSubject() + hasPdf);
+  }
+}
+    </pre>
+  </div>
+</div>
