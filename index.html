@@ -186,7 +186,7 @@
     <div class="row">
       <div class="field">
         <label>Candidate name<span class="req">*</span></label>
-        <input type="text" id="candidateName" placeholder="e.g. Fausto Zambrano" oninput="onCandidateNameInput()" />
+        <input type="text" id="candidateName" placeholder="e.g. Fausto Zambrano" oninput="onCandidateNameInput()" onblur="onCandidateNameBlur()" />
         <span class="err-msg" id="err-candidateName">Required</span>
       </div>
       <div class="field"><label>Candidate email<span class="opt">(optional)</span></label><input type="email" id="candidateEmail" placeholder="e.g. fausto@email.com" /></div>
@@ -222,7 +222,7 @@
     <div class="section-label">Resume<span class="req">*</span></div>
     <button class="drive-btn" id="driveBtn" onclick="authorizeGoogle()">Connect Google Drive to auto-pull resume</button>
     <div id="driveSearchWrap" style="display:none;">
-      <div class="drive-search-row">
+      <div class="drive-search-row" style="display:none;">
         <input type="text" id="driveSearchInput" placeholder="Type candidate name to search Drive…" oninput="searchDrive(this.value)" />
         <span id="driveSearchStatus" style="font-size:12px;color:var(--text-3);padding:8px 4px;white-space:nowrap;"></span>
       </div>
@@ -326,7 +326,13 @@ function authorizeGoogle() {
       btn.onclick = null;
       document.getElementById('driveSearchWrap').style.display = 'block';
       const name = document.getElementById('candidateName').value.trim();
-      if (name) { document.getElementById('driveSearchInput').value = name; searchDrive(name); }
+      if (name) {
+        document.getElementById('driveSearchInput').value = name;
+        document.getElementById('driveSearchStatus').textContent = 'Searching for resume…';
+        searchDrive(name);
+      } else {
+        document.getElementById('driveSearchStatus').textContent = 'Enter candidate name above to auto-find resume';
+      }
     }
   });
   client.requestAccessToken();
@@ -334,6 +340,15 @@ function authorizeGoogle() {
 
 function onCandidateNameInput() {
   clearErr('candidateName');
+  const name = document.getElementById('candidateName').value.trim();
+  // Only search once we have at least a first and last name (space present)
+  if (driveToken && name.includes(' ') && name.length > 4) {
+    document.getElementById('driveSearchInput').value = name;
+    searchDrive(name);
+  }
+}
+
+function onCandidateNameBlur() {
   const name = document.getElementById('candidateName').value.trim();
   if (driveToken && name.length > 2) {
     document.getElementById('driveSearchInput').value = name;
@@ -758,7 +773,7 @@ function copyEmail() {
     <div class="row">
       <div class="field">
         <label>Candidate name<span class="req">*</span></label>
-        <input type="text" id="candidateName" placeholder="e.g. Fausto Zambrano" oninput="onCandidateNameInput()" />
+        <input type="text" id="candidateName" placeholder="e.g. Fausto Zambrano" oninput="onCandidateNameInput()" onblur="onCandidateNameBlur()" />
         <span class="err-msg" id="err-candidateName">Required</span>
       </div>
       <div class="field"><label>Candidate email<span class="opt">(optional)</span></label><input type="email" id="candidateEmail" placeholder="e.g. fausto@email.com" /></div>
