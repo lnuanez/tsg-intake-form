@@ -368,6 +368,11 @@ function searchDrive(query) {
       }
       if (files.length === 0) {
         results.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-3);">No matching files found</div>';
+        results.style.display = 'block';
+      } else if (files.length === 1) {
+        // Only one match — auto-select it, no need to show dropdown
+        results.style.display = 'none';
+        selectResume(files[0].id, files[0].name, files[0].mimeType);
       } else {
         results.innerHTML = files.map(f =>
           `<div class="drive-result-item" onclick="selectResume('${f.id}','${f.name.replace(/'/g,"\\'")}','${f.mimeType}')">
@@ -375,8 +380,8 @@ function searchDrive(query) {
             <span class="drive-result-date">${new Date(f.modifiedTime).toLocaleDateString()}</span>
           </div>`
         ).join('');
+        results.style.display = 'block';
       }
-      results.style.display = 'block';
     } catch(e) {
       document.getElementById('driveSearchStatus').textContent = 'Error';
     }
