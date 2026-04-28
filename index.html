@@ -537,21 +537,42 @@ Candidate email: ${candidateEmail || 'not provided'}
 Location/rate: ${locationLine || 'not applicable'}
 Scheduling: ${slotsLine}
 
-Please fetch the job description from ${job.url} and use it along with the resume below to generate the email.
-
 RESUME:
 ${resume}`;
 
   try {
+    // Step 1: Fetch job description
+    lt.textContent = 'Fetching job description…';
+    let jobDesc = '';
+    try {
+      const jdRes = await fetch(PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1500,
+          system: 'Fetch the job posting from the given URL and extract only the job description: title, responsibilities, requirements, and qualifications. Return plain text only, no JSON, no markdown.',
+          messages: [{ role: 'user', content: `Fetch and extract the job description from: ${job.url}` }],
+          tools: [{ type: 'web_search_20250305', name: 'web_search' }]
+        })
+      });
+      const jdData = await jdRes.json();
+      jobDesc = (jdData.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    } catch(e) {
+      jobDesc = `Role: ${job.title}`;
+    }
+
+    // Step 2: Generate email JSON (no web_search — pure generation)
+    lt.textContent = 'Generating email…';
+    const finalMsg = `${userMsg}\n\nJOB DESCRIPTION:\n${jobDesc}`;
     const res = await fetch(PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
+        max_tokens: 1000,
         system: systemPrompt,
-        messages: [{ role: 'user', content: userMsg }],
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }]
+        messages: [{ role: 'user', content: finalMsg }]
       })
     });
     clearInterval(tick);
