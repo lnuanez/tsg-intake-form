@@ -345,20 +345,25 @@ function searchDrive(query) {
   document.getElementById('driveSearchStatus').textContent = 'Searching…';
   driveSearchTimer = setTimeout(async () => {
     try {
-      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\'/g, "\\'");
+      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/'/g, "\\'");
       const parts = query.trim().split(/\s+/);
       const firstName = normalize(parts[0]);
       const lastName = parts.length > 1 ? normalize(parts[parts.length - 1]) : '';
-      const q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${firstName}' and (mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or mimeType = 'application/vnd.google-apps.document') and trashed = false`;
+
+      // Search using both first and last name (normalized) for precision
+      // Drive API doesn't handle accents, so we normalize before querying
+      let q;
+      if (lastName) {
+        q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${firstName}' and name contains '${lastName}' and trashed = false`;
+      } else {
+        q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${firstName}' and trashed = false`;
+      }
       const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,mimeType)&orderBy=modifiedTime desc`, {
         headers: { Authorization: 'Bearer ' + driveToken }
       });
       const data = await res.json();
       document.getElementById('driveSearchStatus').textContent = '';
       let files = data.files || [];
-      if (lastName) {
-        files = files.filter(f => normalize(f.name.toLowerCase()).includes(lastName.toLowerCase()));
-      }
       if (files.length === 0) {
         results.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-3);">No matching files found</div>';
       } else {
