@@ -221,6 +221,7 @@
   <div class="card">
     <div class="section-label">Resume<span class="req">*</span></div>
     <button class="drive-btn" id="driveBtn" onclick="authorizeGoogle()">Connect Google Drive to auto-pull resume</button>
+    <button class="drive-btn" id="gmailBtn" onclick="authorizeGmail()" style="margin-top:8px;background:var(--accent-light);border-color:#E8C5B0;color:var(--accent);">Connect Gmail (thesmythgroup.com) to create drafts</button>
     <div id="driveSearchWrap" style="display:none;">
       <div class="drive-search-row" style="display:none;">
         <input type="text" id="driveSearchInput" placeholder="Type candidate name to search Drive…" oninput="searchDrive(this.value)" />
@@ -289,6 +290,7 @@ const JOBS = [
 ];
 
 let driveToken = null;
+let gmailToken = null;
 let driveSearchTimer = null;
 
 // ── POPULATE ROLES ──
@@ -312,11 +314,29 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// ── GOOGLE GMAIL AUTH ──
+function authorizeGmail() {
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/gmail.compose',
+    hint: 'lnuanez@thesmythgroup.com',
+    callback: (resp) => {
+      if (resp.error) { alert('Gmail auth failed: ' + resp.error); return; }
+      gmailToken = resp.access_token;
+      const btn = document.getElementById('gmailBtn');
+      btn.textContent = '✓ Gmail connected (thesmythgroup.com)';
+      btn.classList.add('connected');
+      btn.onclick = null;
+    }
+  });
+  client.requestAccessToken();
+}
+
 // ── GOOGLE DRIVE ──
 function authorizeGoogle() {
   const client = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/gmail.compose',
     callback: (resp) => {
       if (resp.error) { alert('Google auth failed: ' + resp.error); return; }
       driveToken = resp.access_token;
@@ -444,6 +464,42 @@ function clearResume() {
   document.getElementById('resumeTag').classList.remove('show');
   document.getElementById('driveSearchInput').value = '';
   document.getElementById('driveSearchStatus').textContent = '';
+}
+
+// ── CREATE GMAIL DRAFT ──
+async function createGmailDraft(to, subject, body) {
+  try {
+    const email = [
+      `To: ${to || ''}`,
+      `Subject: ${subject}`,
+      'Content-Type: text/plain; charset=utf-8',
+      'MIME-Version: 1.0',
+      '',
+      body
+    ].join('\r\n');
+
+    const encoded = btoa(unescape(encodeURIComponent(email)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + gmailToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message: { raw: encoded } })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      console.error('Gmail draft error:', err);
+      return false;
+    }
+    return true;
+  } catch(e) {
+    console.error('Gmail draft exception:', e);
+    return false;
+  }
 }
 
 // ── SLOTS ──
@@ -603,9 +659,24 @@ ${resume}`;
     document.getElementById('emailBody').textContent = parsed.email || '';
     document.getElementById('outputSection').classList.add('show');
     document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Step 3: Create Gmail draft
+    lt.textContent = 'Creating Gmail draft…';
+    const subject = parsed.subject || `${candidateName} - ${job.title}`;
+    let draftCreated = false;
+    if (gmailToken) {
+      draftCreated = await createGmailDraft(clientEmail, subject, parsed.email || '');
+    }
+    if (draftCreated) {
+      document.getElementById('successBanner').textContent = '✓ Gmail draft created — resume will be attached automatically.';
+    } else if (!gmailToken) {
+      document.getElementById('successBanner').textContent = '✓ Email generated — connect Gmail above to auto-create drafts.';
+    } else {
+      document.getElementById('successBanner').textContent = '✓ Email generated — could not create Gmail draft, please create manually.';
+    }
     document.getElementById('successBanner').classList.add('show');
 
-    // Trigger Apps Script to attach resume PDF
+    // Step 4: Trigger Apps Script to attach resume PDF
     const appsScript = `https://script.google.com/a/macros/thesmythgroup.com/s/AKfycbweZoHomOtY4tOKd2VlxBARjaRY8EsouTlzT-dWtLSQBDFS9rdbyHUO9O5XilOeKnUF/exec?candidate=${encodeURIComponent(candidateName)}`;
     fetch(appsScript).catch(() => {});
 
