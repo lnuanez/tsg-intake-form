@@ -268,7 +268,7 @@
 <script>
 // ── CONFIG ──
 const PROXY_URL = 'https://tsg-anthropic-proxy.lnuanez.workers.dev';
-const DRIVE_FOLDER_ID = '1h3xazJKaPbYfjkp_7pB_Cq4HPoMafOK6';
+const DRIVE_FOLDER_ID = '1CdqnVTp3hZxtsTd1QV6XEQzWrY0hnm_Q';
 const GOOGLE_CLIENT_ID = '20470494005-g4o9un13f6pnbv8ad9s41ru9slj9u2ek.apps.googleusercontent.com';
 
 const JOBS = [
@@ -349,8 +349,8 @@ function searchDrive(query) {
       const parts = query.trim().split(/\s+/);
       const firstName = normalize(parts[0]);
       const lastName = parts.length > 1 ? normalize(parts[parts.length - 1]) : '';
-      const q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${firstName}' and mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' and trashed = false`;
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc`, {
+      const q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${firstName}' and (mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' or mimeType = 'application/vnd.google-apps.document') and trashed = false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,mimeType)&orderBy=modifiedTime desc`, {
         headers: { Authorization: 'Bearer ' + driveToken }
       });
       const data = await res.json();
@@ -363,7 +363,7 @@ function searchDrive(query) {
         results.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--text-3);">No matching files found</div>';
       } else {
         results.innerHTML = files.map(f =>
-          `<div class="drive-result-item" onclick="selectResume('${f.id}','${f.name.replace(/'/g,"\\'")}')">
+          `<div class="drive-result-item" onclick="selectResume('${f.id}','${f.name.replace(/'/g,"\\'")}','${f.mimeType}')">
             <span>${f.name}</span>
             <span class="drive-result-date">${new Date(f.modifiedTime).toLocaleDateString()}</span>
           </div>`
@@ -376,23 +376,34 @@ function searchDrive(query) {
   }, 400);
 }
 
-async function selectResume(fileId, fileName) {
+async function selectResume(fileId, fileName, mimeType) {
   document.getElementById('driveResults').style.display = 'none';
   document.getElementById('driveSearchStatus').textContent = 'Loading…';
   try {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { Authorization: 'Bearer ' + driveToken }
-    });
-    const blob = await res.blob();
-    const arrayBuffer = await blob.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    document.getElementById('resume').value = result.value;
+    let text = '';
+    if (mimeType === 'application/vnd.google-apps.document') {
+      // Google Doc — export as plain text
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, {
+        headers: { Authorization: 'Bearer ' + driveToken }
+      });
+      text = await res.text();
+    } else {
+      // .docx — download and extract with mammoth
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: { Authorization: 'Bearer ' + driveToken }
+      });
+      const blob = await res.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      text = result.value;
+    }
+    document.getElementById('resume').value = text;
     document.getElementById('resumeFileName').textContent = fileName;
     document.getElementById('resumeTag').classList.add('show');
     document.getElementById('driveSearchStatus').textContent = '✓';
     clearErr('resume');
     if (!document.getElementById('candidateName').value.trim()) {
-      const nameGuess = fileName.replace(/\.(docx|doc)$/i,'').replace(/[-_]/g,' ').replace(/resume|cv|tsg candidate/gi,'').trim();
+      const nameGuess = fileName.replace(/\.(docx|doc)$/i,'').replace(/[-_]/g,' ').replace(/resume|cv|tsg candidate -/gi,'').trim();
       document.getElementById('candidateName').value = nameGuess;
     }
   } catch(e) {
