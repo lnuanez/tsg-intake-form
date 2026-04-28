@@ -352,7 +352,7 @@ function searchDrive(query) {
 
       // Drive API search by first name only (API doesn't handle accents)
       const q = `'${DRIVE_FOLDER_ID}' in parents and name contains '${firstName}' and trashed = false`;
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,mimeType)&orderBy=modifiedTime desc`, {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,mimeType)&orderBy=modifiedTime desc&includeItemsFromAllDrives=true&supportsAllDrives=true`, {
         headers: { Authorization: 'Bearer ' + driveToken }
       });
       const data = await res.json();
@@ -387,13 +387,13 @@ async function selectResume(fileId, fileName, mimeType) {
     let text = '';
     if (mimeType === 'application/vnd.google-apps.document') {
       // Google Doc — export as plain text
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`, {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain&supportsAllDrives=true`, {
         headers: { Authorization: 'Bearer ' + driveToken }
       });
       text = await res.text();
     } else {
       // .docx — download and extract with mammoth
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
         headers: { Authorization: 'Bearer ' + driveToken }
       });
       const blob = await res.blob();
