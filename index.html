@@ -221,7 +221,6 @@
   <div class="card">
     <div class="section-label">Resume<span class="req">*</span></div>
     <button class="drive-btn" id="driveBtn" onclick="authorizeGoogle()">Connect Google Drive to auto-pull resume</button>
-    <button class="drive-btn" id="gmailBtn" onclick="authorizeGmail()" style="margin-top:8px;background:var(--accent-light);border-color:#E8C5B0;color:var(--accent);">Connect Gmail (thesmythgroup.com) to create drafts</button>
     <div id="driveSearchWrap" style="display:none;">
       <div class="drive-search-row" style="display:none;">
         <input type="text" id="driveSearchInput" placeholder="Type candidate name to search Drive…" oninput="searchDrive(this.value)" />
@@ -314,34 +313,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// ── GOOGLE GMAIL AUTH ──
-function authorizeGmail() {
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/gmail.compose',
-    hint: 'lnuanez@thesmythgroup.com',
-    callback: (resp) => {
-      if (resp.error) { alert('Gmail auth failed: ' + resp.error); return; }
-      gmailToken = resp.access_token;
-      const btn = document.getElementById('gmailBtn');
-      btn.textContent = '✓ Gmail connected (thesmythgroup.com)';
-      btn.classList.add('connected');
-      btn.onclick = null;
-    }
-  });
-  client.requestAccessToken();
-}
-
-// ── GOOGLE DRIVE ──
+// ── GOOGLE AUTH (Drive + Gmail) ──
 function authorizeGoogle() {
   const client = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/gmail.compose',
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
     callback: (resp) => {
       if (resp.error) { alert('Google auth failed: ' + resp.error); return; }
       driveToken = resp.access_token;
+      gmailToken = resp.access_token;
       const btn = document.getElementById('driveBtn');
-      btn.textContent = '✓ Google Drive connected';
+      btn.textContent = '✓ Google connected';
       btn.classList.add('connected');
       btn.onclick = null;
       document.getElementById('driveSearchWrap').style.display = 'block';
@@ -606,20 +588,21 @@ ${resume}`;
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 1500,
+          max_tokens: 800,
           system: 'Fetch the job posting from the given URL and extract only the job description: title, responsibilities, requirements, and qualifications. Return plain text only, no JSON, no markdown.',
           messages: [{ role: 'user', content: `Fetch and extract the job description from: ${job.url}` }],
           tools: [{ type: 'web_search_20250305', name: 'web_search' }]
         })
       });
       const jdData = await jdRes.json();
-      jobDesc = (jdData.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      jobDesc = (jdData.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim().slice(0, 2000);
     } catch(e) {
       jobDesc = `Role: ${job.title}`;
     }
 
-    // Step 2: Generate email JSON (no web_search — pure generation)
+    // Step 2: Wait briefly to avoid rate limit, then generate email
     lt.textContent = 'Generating email…';
+    await new Promise(r => setTimeout(r, 8000));
     const finalMsg = `${userMsg}\n\nJOB DESCRIPTION:\n${jobDesc}`;
     const res = await fetch(PROXY_URL, {
       method: 'POST',
@@ -660,25 +643,34 @@ ${resume}`;
     document.getElementById('outputSection').classList.add('show');
     document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    // Step 3: Create Gmail draft
+    // Step 3: Create Gmail draft + attach resume via Apps Script
     lt.textContent = 'Creating Gmail draft…';
     const subject = parsed.subject || `${candidateName} - ${job.title}`;
+    const appsScript = 'https://script.google.com/a/macros/thesmythgroup.com/s/AKfycbweZoHomOtY4tOKd2VlxBARjaRY8EsouTlzT-dWtLSQBDFS9rdbyHUO9O5XilOeKnUF/exec';
     let draftCreated = false;
-    if (gmailToken) {
-      draftCreated = await createGmailDraft(clientEmail, subject, parsed.email || '');
+    try {
+      const draftRes = await fetch(appsScript, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: clientEmail || '',
+          subject: subject,
+          body: parsed.email || '',
+          candidate: candidateName
+        })
+      });
+      const draftData = await draftRes.json();
+      draftCreated = draftData.success === true;
+    } catch(e) {
+      console.error('Apps Script error:', e);
     }
+
     if (draftCreated) {
-      document.getElementById('successBanner').textContent = '✓ Gmail draft created — resume will be attached automatically.';
-    } else if (!gmailToken) {
-      document.getElementById('successBanner').textContent = '✓ Email generated — connect Gmail above to auto-create drafts.';
+      document.getElementById('successBanner').textContent = '✓ Gmail draft created with resume attached.';
     } else {
-      document.getElementById('successBanner').textContent = '✓ Email generated — could not create Gmail draft, please create manually.';
+      document.getElementById('successBanner').textContent = '✓ Email generated — draft creation failed, please create manually.';
     }
     document.getElementById('successBanner').classList.add('show');
-
-    // Step 4: Trigger Apps Script to attach resume PDF
-    const appsScript = `https://script.google.com/a/macros/thesmythgroup.com/s/AKfycbweZoHomOtY4tOKd2VlxBARjaRY8EsouTlzT-dWtLSQBDFS9rdbyHUO9O5XilOeKnUF/exec?candidate=${encodeURIComponent(candidateName)}`;
-    fetch(appsScript).catch(() => {});
 
   } catch(err) {
     clearInterval(tick);
@@ -824,154 +816,6 @@ function copyEmail() {
   }
 </style>
 </head>
-<body>
 
-<div class="header">
-  <div>
-    <div class="header-logo">TSG</div>
-    <div class="header-sub">Candidate Submission</div>
-  </div>
-  <div class="header-badge" id="rolesBadge">Loading roles…</div>
-</div>
-
-<div class="page">
-
-  <!-- ENGAGEMENT -->
-  <div class="card">
-    <div class="section-label">Engagement</div>
-    <div class="row">
-      <div class="field"><label>Recruiter name<span class="opt">(optional)</span></label><input type="text" id="recruiterName" value="Lawrence" /></div>
-      <div class="field"><label>Client company<span class="opt">(optional)</span></label><input type="text" id="clientName" value="CAA" /></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>Hiring manager<span class="opt">(optional)</span></label><input type="text" id="hiringManager" value="Jeff" /></div>
-      <div class="field">
-        <label>Client contact name<span class="req">*</span></label>
-        <input type="text" id="clientContact" placeholder="e.g. Nadia" oninput="clearErr('clientContact')" />
-        <span class="err-msg" id="err-clientContact">Required</span>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field"><label>Client contact email<span class="opt">(optional)</span></label><input type="email" id="clientEmail" placeholder="e.g. nadia@caa.com" /></div>
-      <div class="field"></div>
-    </div>
-  </div>
-
-  <!-- OPEN ROLE -->
-  <div class="card">
-    <div class="section-label">Open role<span class="req">*</span></div>
-    <div class="field">
-      <div class="role-row">
-        <select id="roleSelect" onchange="clearErr('role')">
-          <option value="">— loading open roles… —</option>
-        </select>
-        <button class="refresh-btn" id="refreshBtn" onclick="loadRoles()">↻ Refresh</button>
-      </div>
-      <span class="err-msg" id="err-role">Please select a role</span>
-      <div class="role-status" id="roleStatus"></div>
-    </div>
-  </div>
-
-  <!-- CANDIDATE -->
-  <div class="card">
-    <div class="section-label">Candidate</div>
-    <div class="row">
-      <div class="field">
-        <label>Candidate name<span class="req">*</span></label>
-        <input type="text" id="candidateName" placeholder="e.g. Fausto Zambrano" oninput="onCandidateNameInput()" onblur="onCandidateNameBlur()" />
-        <span class="err-msg" id="err-candidateName">Required</span>
-      </div>
-      <div class="field"><label>Candidate email<span class="opt">(optional)</span></label><input type="email" id="candidateEmail" placeholder="e.g. fausto@email.com" /></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>Location<span class="opt">(optional)</span></label><input type="text" id="location" placeholder="e.g. Argentina" /></div>
-      <div class="field">
-        <label>Rate type<span class="opt">(optional)</span></label>
-        <select id="rateType">
-          <option value="">— select —</option>
-          <option value="nearshore">Nearshore</option>
-          <option value="offshore">Offshore</option>
-          <option value="onshore">Onshore</option>
-        </select>
-      </div>
-    </div>
-  </div>
-
-  <!-- INTERVIEW SLOTS -->
-  <div class="card">
-    <div class="section-label">Interview slots<span class="opt" style="text-transform:none;margin-left:6px;">(optional)</span></div>
-    <div class="slots-list" id="slotsList">
-      <div class="slot-row">
-        <input type="text" placeholder="e.g. Monday 2pm–3pm EST" />
-        <button class="slot-remove" onclick="removeSlot(this)">×</button>
-      </div>
-    </div>
-    <button class="add-slot-btn" onclick="addSlot()">+ Add another slot</button>
-  </div>
-
-  <!-- RESUME -->
-  <div class="card">
-    <div class="section-label">Resume<span class="req">*</span></div>
-    <button class="drive-btn" id="driveBtn" onclick="authorizeGoogle()">Connect Google Drive to auto-pull resume</button>
-    <div id="driveSearchWrap" style="display:none;">
-      <div class="drive-search-row">
-        <input type="text" id="driveSearchInput" placeholder="Type candidate name to search Drive…" oninput="searchDrive(this.value)" />
-        <span id="driveSearchStatus" style="font-size:12px;color:var(--text-3);padding:8px 4px;white-space:nowrap;"></span>
-      </div>
-      <div class="drive-results" id="driveResults"></div>
-    </div>
-    <div class="resume-tag" id="resumeTag">
-      <span id="resumeFileName">Resume loaded</span>
-      <button class="resume-tag-x" onclick="clearResume()">×</button>
-    </div>
-    <textarea id="resume" rows="7" placeholder="Resume text will appear here once selected from Drive, or paste manually…" oninput="clearErr('resume')"></textarea>
-    <span class="err-msg" id="err-resume">Required</span>
-  </div>
-
-  <!-- SUBMIT -->
-  <button class="submit-btn" id="submitBtn" onclick="submitForm()">Generate &amp; Create Gmail Draft →</button>
-
-  <div class="loading-bar" id="loadingBar">
-    <div class="spinner"></div>
-    <span class="loading-text" id="loadingText">Generating…</span>
-  </div>
-
-  <div class="success-banner" id="successBanner">✓ Gmail draft created and resume attached successfully.</div>
-
-  <!-- OUTPUT -->
-  <div class="output-section" id="outputSection">
-    <div class="output-card">
-      <div class="output-header">
-        <span class="output-title">3 Matching Bullet Points</span>
-        <button class="copy-btn" id="copyBulletsBtn" onclick="copyBullets()">Copy</button>
-      </div>
-      <div class="bullets-body" id="bulletsBody"></div>
-    </div>
-    <div class="output-card">
-      <div class="output-header">
-        <span class="output-title">Draft Submission Email</span>
-        <button class="copy-btn" id="copyEmailBtn" onclick="copyEmail()">Copy</button>
-      </div>
-      <div class="email-body" id="emailBody" contenteditable="true" spellcheck="true"></div>
-      <div class="edit-hint">✎ Click to edit before copying</div>
-    </div>
-  </div>
-
-
-  <!-- CLIPBOARD CONFIRMATION -->
-  <div id="clipboardMsg" style="display:none;margin-top:16px;padding:14px 18px;background:var(--green-light);border:1px solid #B8D9C8;border-radius:var(--radius);font-size:13px;color:var(--green);font-weight:500;">
-    ✓ Submission copied to clipboard — paste it into your Claude chat to generate the email and create the Gmail draft.
-  </div>
-  <!-- FALLBACK if clipboard fails -->
-  <div id="promptWrap" style="display:none;margin-top:16px;">
-    <div style="font-size:12px;font-weight:500;color:var(--text-2);margin-bottom:6px;">Copy this and paste into Claude:</div>
-    <textarea id="promptOutput" rows="6" style="width:100%;font-size:12px;font-family:monospace;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px;color:var(--text);" readonly onclick="this.select()"></textarea>
-  </div>
-
-  <div class="footer">TSG Candidate Submission · Powered by Claude</div>
-</div>
-
-<script>
-// ── CO
 </body>
 </html>
