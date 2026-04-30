@@ -661,7 +661,8 @@ ${resume}`;
           to: clientEmail || '',
           subject: subject,
           body: parsed.email || '',
-          candidate: candidateName
+          candidate: candidateName,
+          clientName: clientName
         })
       });
       const draftData = await draftRes.json();
