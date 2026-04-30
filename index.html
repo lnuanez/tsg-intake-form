@@ -643,13 +643,12 @@ ${resume}`;
     document.getElementById('outputSection').classList.add('show');
     document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    // Step 3: Create Gmail draft + attach resume via Apps Script
+    // Step 3: Create Gmail draft + attach resume via Apps Script (proxied through Cloudflare)
     lt.textContent = 'Creating Gmail draft…';
     const subject = parsed.subject || `${candidateName} - ${job.title}`;
-    const appsScript = 'https://script.google.com/a/macros/thesmythgroup.com/s/AKfycbweZoHomOtY4tOKd2VlxBARjaRY8EsouTlzT-dWtLSQBDFS9rdbyHUO9O5XilOeKnUF/exec';
     let draftCreated = false;
     try {
-      const draftRes = await fetch(appsScript, {
+      const draftRes = await fetch(PROXY_URL + '/appscript', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
