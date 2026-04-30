@@ -144,6 +144,21 @@
 
 <div class="page">
 
+  <!-- OPEN ROLE -->
+  <div class="card">
+    <div class="section-label">Open role<span class="req">*</span></div>
+    <div class="field">
+      <div class="role-row">
+        <select id="roleSelect" onchange="onRoleSelect()">
+          <option value="">— loading open roles… —</option>
+        </select>
+        <button class="refresh-btn" id="refreshBtn" onclick="loadRoles()">↻ Refresh</button>
+      </div>
+      <span class="err-msg" id="err-role">Please select a role</span>
+      <div class="role-status" id="roleStatus"></div>
+    </div>
+  </div>
+
   <!-- ENGAGEMENT -->
   <div class="card">
     <div class="section-label">Engagement</div>
@@ -162,21 +177,6 @@
     <div class="row">
       <div class="field"><label>Client contact email<span class="opt">(optional)</span></label><input type="email" id="clientEmail" placeholder="e.g. nadia@caa.com" /></div>
       <div class="field"></div>
-    </div>
-  </div>
-
-  <!-- OPEN ROLE -->
-  <div class="card">
-    <div class="section-label">Open role<span class="req">*</span></div>
-    <div class="field">
-      <div class="role-row">
-        <select id="roleSelect" onchange="clearErr('role')">
-          <option value="">— loading open roles… —</option>
-        </select>
-        <button class="refresh-btn" id="refreshBtn" onclick="loadRoles()">↻ Refresh</button>
-      </div>
-      <span class="err-msg" id="err-role">Please select a role</span>
-      <div class="role-status" id="roleStatus"></div>
     </div>
   </div>
 
@@ -303,15 +303,40 @@ function loadRoles() {
   document.getElementById('rolesBadge').textContent = JOBS.length + ' open roles';
 }
 
+let cachedJobDesc = '';
+
+function onRoleSelect() {
+  const sel = document.getElementById('roleSelect');
+  const status = document.getElementById('roleStatus');
+  if (sel.value === '') { status.textContent = ''; cachedJobDesc = ''; return; }
+  clearErr('role');
+  const job = JOBS[parseInt(sel.value)];
+  cachedJobDesc = '';
+  status.textContent = 'Fetching job description…';
+  status.className = 'role-status loading';
+  fetch(PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 800,
+      system: 'Extract only the job description from the page: title, responsibilities, requirements, qualifications. Return plain text only, no markdown.',
+      messages: [{ role: 'user', content: `Fetch and extract the job description from: ${job.url}` }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }]
+    })
+  }).then(r => r.json()).then(data => {
+    cachedJobDesc = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim().slice(0, 2500);
+    status.textContent = '✓ Job description ready';
+    status.className = 'role-status ok';
+  }).catch(() => {
+    cachedJobDesc = `Role: ${job.title}`;
+    status.textContent = '⚠️ Could not fetch JD — will use role title';
+    status.className = 'role-status fail';
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   loadRoles();
-  document.getElementById('roleSelect').addEventListener('change', function() {
-    const status = document.getElementById('roleStatus');
-    if (this.value === '') { status.textContent = ''; return; }
-    status.textContent = '✓ Role selected — job description will be fetched by Claude on submit';
-    status.className = 'role-status ok';
-  });
-});
 
 // ── GOOGLE AUTH (Drive + Gmail) ──
 function authorizeGoogle() {
@@ -550,7 +575,7 @@ async function submitForm() {
   const tick = setInterval(() => { mi = Math.min(mi+1, msgs.length-1); lt.textContent = msgs[mi]; }, 2500);
 
   const systemPrompt = `You are a recruitment consultant writing candidate submission emails.
-Generate exactly 3 bullet points highlighting the candidate's strongest fit. Each: 1-2 sentences, specific, tied directly to job requirements.
+Generate exactly 3 bullet points highlighting the candidate's strongest fit for the role. Each: 1-2 sentences, specific, tied directly to job requirements.
 Style: "Extensive experience delivering feature-rich React applications in production, focusing strongly on user experience, responsiveness, and front-end scalability."
 Draft a short warm professional email with this EXACT structure:
 - "Hello [clientContact],"
@@ -575,35 +600,15 @@ Candidate email: ${candidateEmail || 'not provided'}
 Location/rate: ${locationLine || 'not applicable'}
 Scheduling: ${slotsLine}
 
+JOB DESCRIPTION:
+${cachedJobDesc || 'Use your knowledge of the role: ' + job.title}
+
 RESUME:
 ${resume}`;
 
   try {
-    // Step 1: Fetch job description
-    lt.textContent = 'Fetching job description…';
-    let jobDesc = '';
-    try {
-      const jdRes = await fetch(PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 800,
-          system: 'Fetch the job posting from the given URL and extract only the job description: title, responsibilities, requirements, and qualifications. Return plain text only, no JSON, no markdown.',
-          messages: [{ role: 'user', content: `Fetch and extract the job description from: ${job.url}` }],
-          tools: [{ type: 'web_search_20250305', name: 'web_search' }]
-        })
-      });
-      const jdData = await jdRes.json();
-      jobDesc = (jdData.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim().slice(0, 2000);
-    } catch(e) {
-      jobDesc = `Role: ${job.title}`;
-    }
-
-    // Step 2: Wait for rate limit window to reset, then generate email
-    lt.textContent = 'Generating email (please wait…)';
-    await new Promise(r => setTimeout(r, 62000));
-    const finalMsg = `${userMsg}\n\nJOB DESCRIPTION:\n${jobDesc}`;
+    // Single API call — JD already fetched in background when role was selected
+    lt.textContent = 'Generating email…';
     const res = await fetch(PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -611,7 +616,7 @@ ${resume}`;
         model: 'claude-sonnet-4-6',
         max_tokens: 1000,
         system: systemPrompt,
-        messages: [{ role: 'user', content: finalMsg }]
+        messages: [{ role: 'user', content: userMsg }]
       })
     });
     clearInterval(tick);
