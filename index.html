@@ -600,9 +600,9 @@ ${resume}`;
       jobDesc = `Role: ${job.title}`;
     }
 
-    // Step 2: Wait briefly to avoid rate limit, then generate email
-    lt.textContent = 'Generating email…';
-    await new Promise(r => setTimeout(r, 8000));
+    // Step 2: Wait for rate limit window to reset, then generate email
+    lt.textContent = 'Generating email (please wait…)';
+    await new Promise(r => setTimeout(r, 62000));
     const finalMsg = `${userMsg}\n\nJOB DESCRIPTION:\n${jobDesc}`;
     const res = await fetch(PROXY_URL, {
       method: 'POST',
